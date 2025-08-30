@@ -1,0 +1,28 @@
+{
+  "name": "HealthAware - Virtual Rural Health Campaigns",
+  "short_name": "HealthAware",
+  "description": "Modern health awareness platform for rural communities with AI radio, comics, and interactive content",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "orientation": "portrait",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["health", "education", "lifestyle"],
+  "lang": "en",
+  "dir": "ltr"
+}
