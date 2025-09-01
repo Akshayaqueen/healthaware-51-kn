@@ -1,63 +1,62 @@
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { createServerClient } from "@supabase/ssr"
-import { generateText } from "ai"
-import { github } from "@ai-sdk/github"
+import { generateRecommendationPlan } from "@/lib/health/generate-plan"
 
 type GenBody = {
-  age?: string
-  lifestyle?: string
-  count?: number
+  age?: number | string | null
+  lifestyle?: string | null
+  symptoms?: string[] | string | null
+  goals?: string[] | string | null
+  count?: number | string
 }
 
 export async function POST(req: Request) {
-  const { age, lifestyle, count = 3 } = (await req.json().catch(() => ({}))) as GenBody
+  const noPersistHeader = req.headers.get("x-no-persist")
+  // default to no-persist to avoid polluting history from popup
+  const noPersist = noPersistHeader === "true" || noPersistHeader === null
 
-  try {
-    // Generate with GitHub Models (requires GITHUB_TOKEN env)
-    const prompt = `You are a healthcare coach for a rural audience. Generate ${count} concise, actionable, healthcare-focused recommendations that explain why each habit matters in daily life (exercise, diet, sleep, hygiene, etc).
-Context:
-- Age: ${age || "unspecified"}
-- Lifestyle: ${lifestyle || "unspecified"}
+  const body = (await req.json().catch(() => ({}))) as GenBody
+  const plan = generateRecommendationPlan(body)
 
-Output JSON array with objects: [{ title: string, reason: string, action: string }]. Keep titles short and clear.`
+  const count =
+    typeof body?.count === "number" ? body.count : typeof body?.count === "string" ? Number(body.count) : undefined
 
-    const { text } = await generateText({
-      model: github("gpt-4o-mini"),
-      prompt,
-    })
+  const limit = (arr: any[]) =>
+    typeof count === "number" && isFinite(count) && count > 0
+      ? arr.slice(0, Math.min(arr.length, Math.max(1, Math.floor(count))))
+      : arr
 
-    // Parse JSON from model output
-    let recs: Array<{ title: string; reason: string; action: string }> = []
-    try {
-      recs = JSON.parse(text)
-    } catch {
-      // Fallback naive parse: attempt to extract JSON substring
-      const start = text.indexOf("[")
-      const end = text.lastIndexOf("]")
-      if (start >= 0 && end > start) {
-        recs = JSON.parse(text.slice(start, end + 1))
-      }
-    }
+  const limitedSuggestions = limit(plan.suggestions)
+  const limitedTips = limit(plan.tips)
 
-    // Persist to Supabase (anon client; policy or RLS bypass via admin is optional)
-    const cookieStore = cookies()
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
-    const key = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    if (!url || !key) return NextResponse.json({ recommendations: recs || [] }, { status: 200 })
-    const supabase = createServerClient(url, key, { cookies: () => cookieStore })
+  // Backward compatibility: also provide "recommendations" array similar to previous shape
+  const recommendations = limitedSuggestions.map((s) => ({
+    title: s.title,
+    reason: s.detail,
+    action: s.detail,
+  }))
 
-    const inserts = (recs || []).map((r) => ({
-      text: `${r.title}: ${r.action}`,
-      meta: { reason: r.reason, age, lifestyle },
-    }))
-    if (inserts.length) {
-      await supabase.from("recommendations").insert(inserts)
-    }
-
-    return NextResponse.json({ recommendations: inserts.length ? inserts : recs })
-  } catch (e: any) {
-    // Return 200 with fallback empty list to avoid blocking UX
-    return NextResponse.json({ recommendations: [], error: e.message }, { status: 200 })
+  if (noPersist) {
+    return NextResponse.json(
+      {
+        ok: true,
+        tips: limitedTips,
+        message: plan.message,
+        suggestions: limitedSuggestions,
+        recommendations,
+      },
+      { status: 200 },
+    )
   }
+
+  // If persistence is explicitly requested in the future, respond similarly (storage handled by main POST /api/recommendations).
+  return NextResponse.json(
+    {
+      ok: true,
+      tips: limitedTips,
+      message: plan.message,
+      suggestions: limitedSuggestions,
+      recommendations,
+    },
+    { status: 200 },
+  )
 }

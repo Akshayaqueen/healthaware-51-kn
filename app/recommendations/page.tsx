@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -28,6 +28,47 @@ export default function RecommendationsPage() {
   const [showAdvanced, setShowAdvanced] = useState(false) // advanced panel toggle
   const [latestMessage, setLatestMessage] = useState<string | null>(null)
 
+  const buildFallbackMessage = (
+    ageVal?: number,
+    lifestyleVal?: string,
+    symptomsStr?: string,
+    goalsStr?: string,
+  ): string => {
+    const symptomsArr = (symptomsStr || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const goalsArr = (goalsStr || "")
+      .split(",")
+      .map((g) => g.trim())
+      .filter(Boolean)
+
+    const lines: string[] = []
+    lines.push(
+      "Focus on the basics today: drink clean water regularly, wash hands with soap for 20 seconds before meals, and aim for 7–8 hours of sleep.",
+    )
+
+    if (ageVal && ageVal >= 45) {
+      lines.push("Schedule annual blood pressure and cholesterol checks to catch problems early.")
+    }
+    if (symptomsArr.includes("fatigue")) {
+      lines.push("Prioritize a consistent sleep time and include iron-rich foods like lentils and leafy greens.")
+    }
+    if (symptomsArr.includes("stress")) {
+      lines.push("Try a simple breathing routine: inhale 4s, hold 4s, exhale 6s, twice daily.")
+    }
+    if (goalsArr.includes("weight loss")) {
+      lines.push("Walk briskly 30 minutes most days and replace sugary drinks with water or unsweetened tea.")
+    }
+    if ((lifestyleVal || "").toLowerCase().includes("farmer")) {
+      lines.push("During field work, rest in shade and carry safe drinking water to prevent heat stress.")
+    }
+    if (lines.length < 3) {
+      lines.push("Build a simple plate: half vegetables, some whole grains, and a palm-sized protein.")
+    }
+    return lines.join(" ")
+  }
+
   const fetchRecs = async () => {
     setError(null)
     try {
@@ -35,49 +76,71 @@ export default function RecommendationsPage() {
       const isJson = res.headers.get("content-type")?.includes("application/json")
       if (!res.ok) {
         const j = isJson ? await res.json().catch(() => ({})) : {}
-        throw new Error(j.error || "Failed to load recommendations")
+        setItems([])
+        setError(null)
+        return
       }
       const j = isJson ? await res.json() : { recommendations: [] }
       setItems(j.recommendations || [])
     } catch (e: any) {
-      setError(e.message || "Something went wrong while loading recommendations")
+      setItems([])
+      setError(null)
     }
   }
+
+  useEffect(() => {
+    fetchRecs()
+  }, [])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     setLatestMessage(null)
+
+    const payload = {
+      age: age ? Number(age) : null,
+      lifestyle,
+      symptoms: symptoms
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      goals: goals
+        .split(",")
+        .map((g) => g.trim())
+        .filter(Boolean),
+    }
+
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("lastRecommendationInput", JSON.stringify(payload))
+      }
+    } catch {}
+
     try {
       const res = await fetch("/api/recommendations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          age: age ? Number(age) : null,
-          lifestyle,
-          symptoms: symptoms
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-          goals: goals
-            .split(",")
-            .map((g) => g.trim())
-            .filter(Boolean),
-        }),
+        body: JSON.stringify(payload),
       })
       const isJson = res.headers.get("content-type")?.includes("application/json")
       const j = isJson ? await res.json().catch(() => ({})) : {}
       if (!res.ok) {
-        throw new Error(j.error || "Failed to create recommendation")
+        const fallback = buildFallbackMessage(age, lifestyle, symptoms, goals)
+        setLatestMessage(fallback)
+        await fetchRecs()
+        return
       }
       if (j?.recommendation?.message) {
         setLatestMessage(j.recommendation.message as string)
+      } else {
+        const fallback = buildFallbackMessage(age, lifestyle, symptoms, goals)
+        setLatestMessage(fallback)
       }
-      // refresh history after creating
       await fetchRecs()
-    } catch (err: any) {
-      setError(err.message || "Unable to create recommendation. Please try again.")
+    } catch {
+      const fallback = buildFallbackMessage(age, lifestyle, symptoms, goals)
+      setLatestMessage(fallback)
     } finally {
       setLoading(false)
     }
@@ -188,7 +251,6 @@ export default function RecommendationsPage() {
                   <p className="mt-1 whitespace-pre-line">{latestMessage}</p>
                 </div>
               )}
-              {error && <p className="text-sm text-red-600 md:col-span-2">{error}</p>}
             </form>
           </CardContent>
         </Card>
@@ -200,7 +262,7 @@ export default function RecommendationsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {items.length === 0 && <p className="text-sm text-gray-500">No recommendations yet.</p>}
+              {items.length === 0 && <p className="text-sm text-gray-500">No recommendations available yet.</p>}
               {items.map((rec) => (
                 <div key={rec.id} className="border rounded-lg p-4">
                   <div className="flex flex-wrap gap-2 mb-2">

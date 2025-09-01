@@ -6,11 +6,25 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { BookOpen, Download, Search, Filter, Heart, Brain, Apple, Shield, Users, Baby, Eye } from "lucide-react"
+import {
+  BookOpen,
+  Download,
+  Search,
+  Filter,
+  Heart,
+  Brain,
+  Apple,
+  Shield,
+  Users,
+  Baby,
+  Eye,
+  MoreVertical,
+} from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 import useSWR from "swr"
 import { createClient as createSupabaseClient } from "@/lib/supabase/client"
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 
 const comicCategories = [
   { name: "All", icon: BookOpen, count: 24 },
@@ -164,6 +178,20 @@ export default function ComicsPage() {
     }
   }, [mutate])
 
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch("/api/comics", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      })
+      // optimistic refresh
+      await mutate()
+    } catch {
+      // silent fail; UI will refresh on next load
+    }
+  }
+
   return (
     <div className="min-h-screen py-8 px-4">
       <div className="max-w-7xl mx-auto">
@@ -205,10 +233,27 @@ export default function ComicsPage() {
               {dynamicComics.map((comic) => (
                 <Card key={comic.id} className="h-full card-hover accent-card overflow-hidden">
                   <CardHeader>
-                    <CardTitle className="text-lg line-clamp-2">{comic.title}</CardTitle>
-                    {comic.first_panel_text && (
-                      <CardDescription className="mt-2 line-clamp-4">{comic.first_panel_text}</CardDescription>
-                    )}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <CardTitle className="text-lg line-clamp-2">{comic.title}</CardTitle>
+                        {comic.first_panel_text && (
+                          <CardDescription className="mt-2 line-clamp-4">{comic.first_panel_text}</CardDescription>
+                        )}
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="shrink-0">
+                            <MoreVertical className="h-4 w-4" />
+                            <span className="sr-only">Open actions</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(comic.id)}>
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <div className="flex space-x-2">

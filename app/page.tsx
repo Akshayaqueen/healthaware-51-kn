@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { useLanguage } from "@/lib/language-context"
 import { Button } from "@/components/ui/button"
@@ -80,6 +81,7 @@ const FloatingParticles = () => {
 export default function HomePage() {
   const { user, loading } = useAuth()
   const { t } = useLanguage()
+  const router = useRouter()
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [selectedAnswers, setSelectedAnswers] = useState<number[]>([])
   const [showResults, setShowResults] = useState(false)
@@ -87,6 +89,9 @@ export default function HomePage() {
   const [recLoading, setRecLoading] = useState(false)
   const [recError, setRecError] = useState<string | null>(null)
   const [recData, setRecData] = useState<{ id: string; suggestions: { text: string }[] } | null>(null)
+  const [popupOpen, setPopupOpen] = useState(true)
+  const [popupLoading, setPopupLoading] = useState(false)
+  const [popupSuggestions, setPopupSuggestions] = useState<string[]>([])
 
   const quizQuestions = [
     {
@@ -177,6 +182,17 @@ export default function HomePage() {
 
   const correctAnswers = selectedAnswers.filter((answer, index) => answer === quizQuestions[index].correct).length
 
+  const buildQuickFallback = (): { id: string; suggestions: { text: string }[] } => {
+    return {
+      id: `temp-${Date.now()}`,
+      suggestions: [
+        { text: "Drink clean water regularly; hydration prevents fatigue and headaches." },
+        { text: "Wash hands with soap for 20 seconds before meals to prevent common infections." },
+        { text: "Walk briskly 20–30 minutes daily to improve heart health and mood." },
+      ],
+    }
+  }
+
   const getQuickRecommendations = async () => {
     setRecError(null)
     setRecLoading(true)
@@ -188,17 +204,21 @@ export default function HomePage() {
       })
       const isJson = res.headers.get("content-type")?.includes("application/json")
       if (!res.ok) {
-        const j = isJson ? await res.json().catch(() => ({})) : {}
-        throw new Error(j.error || "Failed to generate recommendations")
+        setRecData(buildQuickFallback())
+        return
       }
       const j = isJson ? await res.json() : {}
       const rec = j.recommendation
-      if (rec) setRecData({ id: rec.id, suggestions: rec.suggestions || [] })
-      else setRecError("No recommendations available right now.")
-    } catch (e: any) {
-      setRecError(e.message || "Something went wrong")
+      if (rec && Array.isArray(rec.suggestions) && rec.suggestions.length) {
+        setRecData({ id: rec.id, suggestions: rec.suggestions || [] })
+      } else {
+        setRecData(buildQuickFallback())
+      }
+    } catch {
+      setRecData(buildQuickFallback())
     } finally {
       setRecLoading(false)
+      router.push("/recommendations")
     }
   }
 
@@ -217,6 +237,48 @@ export default function HomePage() {
       // silent fail
     }
   }
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        setPopupLoading(true)
+        const res = await fetch("/api/recommendations/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-no-persist": "true", // instruct API not to save to history
+          },
+          body: JSON.stringify({ count: 3, age: "unspecified", lifestyle: "unspecified" }),
+        })
+        const isJson = res.headers.get("content-type")?.includes("application/json")
+        const j = isJson ? await res.json().catch(() => ({})) : {}
+        const list = Array.isArray(j?.recommendations) ? j.recommendations : []
+        const texts: string[] = list
+          .map((it: any) => {
+            if (typeof it?.text === "string") return it.text
+            if (it?.title && it?.action) return `${it.title}: ${it.action}`
+            return null
+          })
+          .filter(Boolean)
+        const base = texts.length ? texts : buildQuickFallback().suggestions.map((s) => s.text)
+        const shuffled = [...base].sort(() => Math.random() - 0.5)
+        const count = Math.random() < 0.5 ? 2 : 3
+        if (!cancelled) setPopupSuggestions(shuffled.slice(0, count))
+      } catch {
+        const base = buildQuickFallback().suggestions.map((s) => s.text)
+        const shuffled = [...base].sort(() => Math.random() - 0.5)
+        const count = 2
+        if (!cancelled) setPopupSuggestions(shuffled.slice(0, count))
+      } finally {
+        if (!cancelled) setPopupLoading(false)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   if (loading) {
     return (
@@ -736,6 +798,37 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Bottom-right Personalized Suggestions popup */}
+      {popupOpen && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm w-[320px]">
+          <div className="rounded-xl border bg-white shadow-xl">
+            <div className="flex items-center justify-between px-4 py-3">
+              <h3 className="text-sm font-semibold">Personalized Suggestions</h3>
+              <button
+                aria-label="Close suggestions"
+                className="text-gray-500 hover:text-gray-700"
+                onClick={() => setPopupOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="px-4 pb-4">
+              {popupLoading ? (
+                <p className="text-xs text-gray-500">Loading tips…</p>
+              ) : (
+                <ul className="list-disc list-inside space-y-1">
+                  {popupSuggestions.map((t, i) => (
+                    <li key={i} className="text-sm text-gray-700">
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <Dialog open={recOpen} onOpenChange={setRecOpen}>
         <DialogContent className="sm:max-w-lg">

@@ -44,7 +44,9 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser().catch(() => ({ data: { user: null } as any }))
 
   const body = await request.json().catch(() => ({}))
-  const title = body?.title || "Healthy Habits in Daily Life"
+  const baseTitle = (body?.title as string) || "Healthy Habits in Daily Life"
+  const suffix = `${Math.random().toString(36).slice(2, 6)}-${Date.now().toString().slice(-4)}`
+  const title = `${baseTitle} (${suffix})`
 
   try {
     const admin = createAdminClient()
@@ -55,10 +57,14 @@ export async function POST(request: Request) {
       .single()
     if (error) return NextResponse.json({ error: error.message }, { status: 200 })
 
-    // Seed first narrative "panel" (novel-style storyline)
-    const firstPanelText =
-      `Episode 1: ${title} — why it matters: clean water, 20-second handwashing, regular sleep, and daily movement ` +
-      `prevent common infections and keep energy high for work and family.`
+    const openings = [
+      `Episode 1: ${title} — In the village, Asha learns how clean water and handwashing keep families healthy.`,
+      `Episode 1: ${title} — Ravi starts a 20‑minute sunset walk, noticing better sleep and mood.`,
+      `Episode 1: ${title} — Meera builds a simple plate: half veggies, some grains, and lentils for strength.`,
+      `Episode 1: ${title} — During harvest, Sunil protects his skin with shade and water breaks.`,
+    ]
+    const firstPanelText = openings[Math.floor(Math.random() * openings.length)]
+
     await admin.from("comic_panels").insert({
       comic_id: comic.id,
       panel_index: 0,
@@ -69,5 +75,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ comic }, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "Failed to create comic" }, { status: 200 })
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { id } = (await request.json().catch(() => ({}))) as { id?: string }
+    if (!id) return NextResponse.json({ ok: false, error: "Missing id" }, { status: 200 })
+
+    const admin = createAdminClient()
+    const { error } = await admin.from("comics").delete().eq("id", id)
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 200 })
+
+    return NextResponse.json({ ok: true }, { status: 200 })
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e.message || "Failed to delete" }, { status: 200 })
   }
 }

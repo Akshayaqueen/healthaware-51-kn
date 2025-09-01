@@ -9,6 +9,7 @@ import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
 import { PWAInstall } from "@/components/pwa-install"
 import { I18nHead } from "@/components/i18n-head"
+import SuggestionsPopup from "@/components/suggestions-popup"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -46,6 +47,7 @@ function ClientLayout({ children }: { children: React.ReactNode }) {
             <main className="flex-1">{children}</main>
             <Footer />
           </div>
+          <SuggestionsPopup />
           <PWAInstall />
         </AuthProvider>
       </LanguageProvider>
